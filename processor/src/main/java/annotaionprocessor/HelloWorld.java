@@ -6,7 +6,7 @@ import com.squareup.javapoet.TypeSpec;
 
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
-@NewIntent
+@Data
 public class HelloWorld {
     public static void main(String[] args) throws IOException {
         MethodSpec main = MethodSpec.methodBuilder("main")

@@ -4,6 +4,7 @@ import com.google.auto.service.AutoService;
 import com.sun.source.tree.Tree;
 import com.sun.tools.javac.api.JavacTrees;
 import com.sun.tools.javac.code.Flags;
+import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.processing.JavacProcessingEnvironment;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.TreeMaker;
@@ -68,20 +69,59 @@ public class JucTreeProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> set, RoundEnvironment roundEnvironment) {
-        roundEnvironment.getElementsAnnotatedWith(NewIntent.class).forEach(element -> {
+        roundEnvironment.getElementsAnnotatedWith(Data.class).forEach(element -> {
             JCTree jcTree = trees.getTree(element);
             jcTree.accept(new TreeTranslator() {
                 @Override
                 public void visitClassDef(JCTree.JCClassDecl jcClassDecl) {
                     //获取所有的变量
+                    Map<String,Integer> skipInfos = new HashMap<>();
+                    String toString = "toString";
+
                     List<JCTree.JCVariableDecl> jcVariableDeclList = nil();
-                    for (JCTree tree : jcClassDecl.defs) {
+                    for (JCTree tree : jcClassDecl.getMembers()) {
+                        if (tree.getKind().equals(Tree.Kind.METHOD)) {
+                            JCTree.JCMethodDecl method =(JCTree.JCMethodDecl) tree;
+                            com.sun.tools.javac.util.Name methodName = method.getName();
+                            if (methodName.toString().equals(toString)) {
+                                skipInfos.merge(toString,1,Integer::sum);
+                                continue;
+                            }
+
+                            com.sun.tools.javac.util.Name getter = names.fromString("get");
+                            if (methodName.startsWith(getter)) {
+                                String s = methodName.toString();
+                                String s1 = s.substring(3, 4).toLowerCase() + s.substring(4);
+                                skipInfos.merge(s1,2,Integer::sum);
+                                continue;
+                            }
+                            com.sun.tools.javac.util.Name setter = names.fromString("set");
+
+                            if (methodName.startsWith(setter)) {
+                                String s = methodName.toString();
+                                String s1 = s.substring(3, 4).toLowerCase() + s.substring(4);
+                                skipInfos.merge(s1,4,Integer::sum);
+                                continue;
+                            }
+                        }
+
                         if (tree.getKind().equals(Tree.Kind.VARIABLE)) {
                             JCTree.JCVariableDecl jcVariableDecl = (JCTree.JCVariableDecl) tree;
                             jcVariableDeclList = jcVariableDeclList.append(jcVariableDecl);
                         }
                     }
-                    jcClassDecl.defs = jcClassDecl.defs.prepend(generatorToString(jcVariableDeclList));
+                    if ((skipInfos.getOrDefault(toString,0)&1)== 0) {
+                        jcClassDecl.defs = jcClassDecl.defs.prepend(generatorToString(jcVariableDeclList));
+                    }
+
+                    for (JCTree.JCVariableDecl jcVariableDecl : jcVariableDeclList) {
+                        if ((skipInfos.getOrDefault(jcVariableDecl.name.toString(),0)&2) == 0) {
+                            jcClassDecl.defs = jcClassDecl.defs.prepend(makeGetterMethodDecl(jcVariableDecl));
+                        }
+                        if ((skipInfos.getOrDefault(jcVariableDecl.name.toString(),0)&4) == 0) {
+                            jcClassDecl.defs = jcClassDecl.defs.prepend(makeSetterMethodDecl(jcVariableDecl));
+                        }
+                    }
                     super.visitClassDef(jcClassDecl);
                 }
 
@@ -106,7 +146,25 @@ public class JucTreeProcessor extends AbstractProcessor {
                 body,
                 null);
     }
-    private JCTree.JCMethodDecl generatorToString(List<JCTree.JCVariableDecl> jcVariableDeclList){
+    private JCTree.JCMethodDecl makeSetterMethodDecl(JCTree.JCVariableDecl jcVariableDecl) {
+        ListBuffer<JCTree.JCStatement> statements = new ListBuffer<>();
+        JCTree.JCIdent aThis = treeMaker.Ident(names.fromString("this"));
+        com.sun.tools.javac.util.Name variableName = jcVariableDecl.name;
+        statements.append(treeMaker.Exec(treeMaker.Assign(treeMaker.Select(aThis,variableName),treeMaker.Ident(variableName))));
+        JCTree.JCBlock body = treeMaker.Block(0, statements.toList());
+        JCTree.JCVariableDecl param3 = treeMaker.VarDef(treeMaker.Modifiers(Flags.PARAMETER), variableName,jcVariableDecl.vartype, null);
+        com.sun.tools.javac.util.List<JCTree.JCVariableDecl> parameters3 = com.sun.tools.javac.util.List.of(param3);
+        return treeMaker.MethodDef(
+                treeMaker.Modifiers(Flags.PUBLIC),
+                setNewMethodName(variableName),
+                treeMaker.Type(new Type.JCVoidType()),
+                nil(),
+                parameters3,
+                nil(),
+                body,
+                null);
+    }
+    private JCTree.JCMethodDecl generatorToString(java.util.List<JCTree.JCVariableDecl> jcVariableDeclList){
         if (jcVariableDeclList.isEmpty()) {
             return null;
         }
@@ -150,11 +208,15 @@ public class JucTreeProcessor extends AbstractProcessor {
         String s = name.toString();
         return names.fromString("get" + s.substring(0, 1).toUpperCase() + s.substring(1, name.length()));
     }
+    private com.sun.tools.javac.util.Name setNewMethodName(Name name) {
+        String s = name.toString();
+        return names.fromString("set" + s.substring(0, 1).toUpperCase() + s.substring(1, name.length()));
+    }
 
     @Override
     public Set<String> getSupportedAnnotationTypes() {
         Set<String> objects = new HashSet<>();
-        objects.add(NewIntent.class.getCanonicalName());
+        objects.add(Data.class.getCanonicalName());
         return objects;
     }
 

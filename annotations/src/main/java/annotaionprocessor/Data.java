@@ -6,13 +6,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * @author by liyunlei
- * <p>
- * write on 2019/7/16
- * <p>
- * Class desc:
+ * 实现 lombok
+ * get set toString
+ *
+ * @author xiaojiaquan
+ * @date 2022/6/25 13:26
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)
-public @interface NewIntent {
+public @interface Data {
 }
